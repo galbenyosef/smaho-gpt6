@@ -1,6 +1,6 @@
 # aura — 手のひらに、もうひとつの世界。
 
-ブラウザ内で動くスマートフォン体験 **auraOS 4.0 Everyday Edition**。30アプリ・3ゲームを備え、日常の記録、外部データの取得、端末の実アプリへの引き渡し、共有・書き出しに対応します。
+ブラウザ内で動くスマートフォン体験 **auraOS 4.1 Everyday + Arcade**。30アプリ・8ゲームを備え、日常の記録、外部データの取得、端末の実アプリへの引き渡し、共有・書き出しに対応します。
 
 **本番：<https://sc8z35a-collab.github.io/smaho-gpt6/>**
 
@@ -57,7 +57,7 @@ GitHub Pagesが `main` ブランチのルートを公開します。ビルド工
 | 時計 | 世界時計・タイマー・アラーム。「連携」から通知権限を要求 | ページ終了・スリープ中の動作保証はない。環境によってOS通知が使えず画面内通知のみになる |
 | ヘルスケア | 手入力と水分記録、JSON書き出し | 外部健康アカウント・センサーは未接続。サンプルを含む。医療・実測データではない |
 | ウォレット | 明示的な架空残高・架空商品のデモ | 実決済・チャージは未接続。カード情報を入力しない |
-| ゲーム | 2048・Little Snake・Memory Garden | 端末内で完結。外部接続不要 |
+| ゲーム | 2048・Little Snake・Memory Garden・Block Atelier・Crystal Field・Reversi・Orbit Breaker・Sudoku | 端末内で完結。外部接続不要 |
 | 設定 | 接続とプライバシー画面から全アプリの実装範囲を確認。保存した都市・位置・天気を消去可能 | Wi-Fi / Bluetooth / 機内モードは体験内のシミュレーション。実通信状態を変更しない |
 
 メール・電話・メッセージの旧デモは「デモ」からのみ起動できます。架空の連絡先を実発信に流用しません。デモの未読数を実メール・SMSの未読として表示しません。ミュージックの「音源」には従来のブラウザ生成アンビエントが残っています。
@@ -113,7 +113,7 @@ GitHub Pagesが `main` ブランチのルートを公開します。ビルド工
 ## ファイル構成
 
 ```text
-index.html              本体（version 4.0.0のアセット参照）
+index.html              本体（version 4.1.0のアセット参照）
 css/style.css           共通・アプリ・レスポンシブスタイル
 css/everyday.css        日常アプリ・ダークモード・狭い画面のスタイル
 css/leaflet.css          同梱地図ライブラリのスタイル
@@ -125,7 +125,9 @@ js/connected.js         通信共通処理・実天気・実地図・接続ブ�
 js/handoffs.js          ネイティブ引き渡し・共有・輸出入・楽曲・為替
 js/everyday.js          10個の日常アプリ・検索拡張
 js/leaflet.js           Leaflet 1.9.4
-js/games.js             3ゲーム・初期ディープリンク
+js/games.js             既存3ゲーム・初期ディープリンク
+js/arcade.js            ゲームライブラリ・追加5ゲーム
+css/arcade.css          ゲームアート・盤面・レスポンシブスタイル
 launch/*.html           起動ショートカット
 tests/index.html        回帰テスト入口
 tests/regression.js     既存機能と外部接続契約のテスト
@@ -168,3 +170,25 @@ tests/persistence.cjs   Playwrightでの再読込・既存配置移行・タイ�
 追加の保存キーは `expenseBudgets`, `recurringExpenses`, `shoppingLists`, `readingSessions`, `readingQuotes`, `readingGoal`, `focusPreferences`（すべて `aura.` 接頭辞）。固定費はボタン操作時に記帳します。自動引落し・外部決済は行いません。
 
 今回の最終作り込みについては、依頼により追加テストを実施していません。従来のテスト結果は最終版の動作保証を意味しません。
+
+
+## 4.1 Arcade
+
+ゲームを3本から8本へ拡張。ライブラリには描き下ろしSVGカバー、お気に入り、ジャンル絞り込み、直近プレイの入口を追加しました。
+
+| ゲーム | 実装 |
+|---|---|
+| 2048 | 陶器風の立体タイル、数字ごとの素材色、盤面の陰影、操作ボタンを刷新。既存の進行・最高点・一手戻しを維持 |
+| Little Snake | グラデーションの庭、草の描画、つながった体、立体的な果実と顔、柔らかい影へ更新 |
+| Memory Garden | 8種類のSVGイラスト、装飾入りのカード裏、表面・一致カード・トレイの素材表現を更新 |
+| Block Atelier | 7種類の落下ブロック、7種一巡の抽選、次の形、ホールド、着地点表示、回転時の横補正、ソフト/ハードドロップ、レベル、進行保存 |
+| Crystal Field | 8×8 / 10×10 / 12×12、初手と周囲の安全確保、旗、一括展開、周辺開封、経過時間、勝利数、難易度別の最短時間、進行保存 |
+| Reversi | CPU / 2人対戦、合法手表示、石の立体描画、パス、終局判定、一手戻し、進行保存。CPUは位置評価・相手の応手・可動手数を参照 |
+| Orbit Breaker | 軌跡付きのボール、パドル位置による反射角、連続破壊加点、複数耐久のブロック、ステージ、残機、ドラッグとキーボード操作 |
+| Sudoku | 3難易度、日付別の問題、候補メモ、同値・行列・枠の強調、取り消し、消去、誤り表示、3回のヒント、進行保存 |
+
+追加の起動リンク：`#app=games&view=blocks`、`mines`、`reversi`、`breaker`、`sudoku`（後ろ4件も同じview形式）。
+
+追加ゲームの保存キーは `arcadeFavorites`、`arcadeRecent`、`blocksState`、`blocksBest`、`minesState`、`minesWins`、`minesBest-難易度`、`reversiState`、`reversiWins`、`breakerBest`、`sudokuState`、`sudokuWins`、`sudokuDaily`（すべて `aura.` 接頭辞）。ブロック崩しは最高点のみ保存し、進行は同じページを開いている間だけ保持します。スケッチ同様にゲーム操作の取り消し履歴はセッション内のみです。
+
+ゲーム追加・グラフィック変更も、依頼によりテストを実行していません。本番反映時はGitHub Pagesのデプロイ成否と配信バージョンだけを確認します。
