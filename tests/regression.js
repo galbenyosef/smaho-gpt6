@@ -30,7 +30,7 @@ frame.addEventListener('load',async()=>{
  const submit=selector=>d.querySelector(selector).dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
  const until=async(predicate)=>{for(let i=0;i<100;i++){if(predicate())return;await delay(30);}throw Error('Timed out waiting for application state');};
 
- await test('20 app registrations and home icons',()=>{assert(Object.keys(A.apps).length===20,'App count');assert(d.querySelectorAll('#app-grid .app-launcher').length===16,'Home icon count');assert(d.querySelectorAll('#home-dock .app-launcher').length===4,'Dock count');Object.values(A.apps).forEach(a=>assert(typeof a.render==='function','Missing renderer '+a.id));});
+ await test('30 app registrations and home icons',()=>{assert(Object.keys(A.apps).length===30,'App count');assert(d.querySelectorAll('#app-grid .app-launcher').length===26,'Home icon count');assert(d.querySelectorAll('#home-dock .app-launcher').length===4,'Dock count');Object.values(A.apps).forEach(a=>assert(typeof a.render==='function','Missing renderer '+a.id));});
  for(const id of Object.keys(A.apps))await test('App opens: '+id,()=>{A.open(id);assert(!d.querySelector('#app-screen').hidden,'App hidden');assert(d.querySelector('#app-screen').textContent.trim().length>0,'Empty application');assert(A.current===id,'Wrong current app');const missing=[...d.querySelectorAll('#app-screen [data-action]')].filter(el=>!A.actions[el.dataset.action]);assert(!missing.length,'Missing handlers: '+missing.map(e=>e.dataset.action));});
  await test('Home / lock / unlock',()=>{A.home();A.lock();assert(!d.querySelector('#lock-screen').hidden,'Lock invisible');click('#unlock-button');assert(!d.querySelector('#home-screen').hidden,'Home invisible');});
  await test('Control center brightness and dark mode',()=>{A.controls();input('#control-brightness','75');assert(A.settings.brightness===75,'Brightness');click('[data-action="controlToggle"][data-key="dark"]');assert(d.querySelector('#phone-screen').classList.contains('screen-dark-mode')===A.settings.dark,'Dark mode');A.settings.dark=false;A.settings.brightness=100;A.applySettings();});
@@ -71,15 +71,15 @@ frame.addEventListener('load',async()=>{
  await test('Library groups contain every app and filter by English ID',()=>{
   A.home();A.library();
   const ids=new Set([...d.querySelectorAll('.library-category [data-app]')].map(el=>el.dataset.app));
-  assert(ids.size===20,'Missing library apps');input('#library-query','CALCULATOR');
+  assert(ids.size===30,'Missing library apps');input('#library-query','CALCULATOR');
   assert(d.querySelectorAll('#library-results .app-launcher').length===1,'Library filter');
   click('#library-results [data-app="calculator"]');assert(A.current==='calculator','Library launch');
  });
  await test('Home edit swaps icons across dock and persists unique order',()=>{
   A.home();A.actions.editHome();click('#app-grid [data-app="calendar"]');click('#home-dock [data-app="messages"]');
   assert(A.current===null,'Editing launched app');assert(d.querySelector('#app-grid [data-app="messages"]'),'Swap failed');
-  const order=A.load('homeOrder',[]);assert(order[0]==='messages'&&order[18]==='calendar','Order not saved');
-  assert(new Set(order).size===20,'Duplicate app');A.actions.finishEditing();A.renderHome();
+  const order=A.load('homeOrder',[]);assert(order[0]==='messages'&&order[28]==='calendar','Order not saved');
+  assert(new Set(order).size===30,'Duplicate app');A.actions.finishEditing();A.renderHome();
   assert(d.querySelector('#app-grid .app-launcher').dataset.app==='messages','Render lost order');
   A.actions.resetLayout();click('#confirm-yes');assert(A.load('homeOrder',[])[0]==='calendar','Reset failed');
  });
@@ -159,11 +159,11 @@ frame.addEventListener('load',async()=>{
   items.at(-1).focus();items.at(-1).dispatchEvent(new w.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));
   assert(d.activeElement===items[0],'Focus escaped dialog');A.closeOverlay();assert(d.activeElement===opener,'Focus not restored');
  });
- await test('Common phone heights fit every home icon without scrolling',async()=>{
+ await test('Common phone heights keep all home icons reachable by scrolling',async()=>{
   A.home();const originalStyle=frame.getAttribute('style');
   try{for(const [width,height] of [[390,844],[412,740],[430,932],[1440,900]]){
    frame.style.width=width+'px';frame.style.height=height+'px';await delay(60);
-   const main=d.querySelector('.home-main');main.scrollTop=0;
+   const main=d.querySelector('.home-main');main.scrollTop=main.scrollHeight;
    assert(d.querySelector('#app-grid .app-launcher:last-child').getBoundingClientRect().bottom<=main.getBoundingClientRect().bottom+1,'Home icons clipped '+width+'x'+height);
   }}finally{if(originalStyle===null)frame.removeAttribute('style');else frame.setAttribute('style',originalStyle);}
  });
@@ -250,9 +250,10 @@ frame.addEventListener('load',async()=>{
   A.network.offerFile(new w.Blob(['test'],{type:'text/plain'}),'qa.txt');assert(d.querySelector('#save-ready'),'Save fallback missing');assert(d.querySelector('#overlay').textContent.includes('アップロードしません'),'Consent explanation absent');
  });
  await test('Connection center covers all apps and labels unconnected services',()=>{
-  A.open('settings');A.actions.connectionCenter();assert(d.querySelectorAll('#overlay [data-app]').length===20,'Missing app capability');assert(d.querySelector('#overlay').textContent.includes('実決済未接続'),'Payments misrepresented');assert(A.mailUnread()===0&&A.messageUnread()===0,'Fake native unread badges');
+  A.open('settings');A.actions.connectionCenter();assert(d.querySelectorAll('#overlay [data-app]').length===30,'Missing app capability');assert(d.querySelector('#overlay').textContent.includes('実決済未接続'),'Payments misrepresented');assert(A.mailUnread()===0&&A.messageUnread()===0,'Fake native unread badges');
  });
  await test('App lifecycle cleanup and no captured errors',()=>{A.home();assert(A.cleanups.length===0,'Cleanup callbacks not drained');assert(!errors.length,errors.join('; '));});
+
  A.music.pause();A.home();w.fetch=nativeFetch;
  Object.keys(w.localStorage).filter(k=>k.startsWith('aura.')).forEach(k=>w.localStorage.removeItem(k));Object.entries(original).forEach(([k,v])=>w.localStorage.setItem(k,v));
  log(`RESULT: ${passed} passed, ${failed} failed.`);document.body.dataset.testComplete='true';

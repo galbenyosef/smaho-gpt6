@@ -74,11 +74,16 @@
     ['mail','メール','linear-gradient(145deg,#287bef,#55adf8)'],['clock','時計','#15171b'],['maps','マップ','#ecf1e1'],['notes','メモ','linear-gradient(#f3d470 29%,#fff 29%)'],
     ['reminders','リマインダー','#fff'],['files','ファイル','#fff'],['calculator','計算機','linear-gradient(145deg,#59636d,#35404d)'],['settings','設定','linear-gradient(145deg,#d6dbe0,#a3aab4)'],
     ['games','ゲーム','linear-gradient(140deg,#ad91e2,#8067ce)'],['health','ヘルスケア','#fff'],['wallet','ウォレット','linear-gradient(145deg,#363d46,#222832)'],['recorder','ボイスメモ','#181b20'],
+    ['today','今日','linear-gradient(145deg,#92b8bb,#4c7b89)'],['focus','集中','linear-gradient(145deg,#a79bd0,#716299)'],
+    ['habits','習慣','linear-gradient(145deg,#a3c39b,#628b71)'],['expenses','家計簿','linear-gradient(145deg,#7cbcb3,#467f7e)'],
+    ['shopping','買い物','linear-gradient(145deg,#e2b48b,#b98465)'],['journal','日記','linear-gradient(145deg,#d2a8bd,#a47899)'],
+    ['contacts','連絡先','linear-gradient(145deg,#8eb1d1,#5c7ca0)'],['converter','単位換算','linear-gradient(145deg,#a5b8c4,#6b8596)'],
+    ['reading','読書','linear-gradient(145deg,#cab392,#958064)'],['sketch','スケッチ','linear-gradient(145deg,#d1adb2,#a07183)'],
     ['phone','電話','linear-gradient(145deg,#70db87,#32bd5b)'],['safari','ブラウザ','#fff'],['messages','メッセージ','linear-gradient(145deg,#76e58c,#36c967)'],['music','ミュージック','linear-gradient(145deg,#f7768e,#ec476b)']
   ];
   appData.forEach(([id,name,color]) => A.apps[id] = {id,name,color});
   A.launcher = (app, dock=false) => { const now = new Date(); return `<button class="app-launcher" data-app="${app.id}" aria-label="${app.name}を開く"><span class="app-icon ${app.id}-icon" style="background:${app.color}">${app.id==='calendar'?`<small>${['日','月','火','水','木','金','土'][now.getDay()]}曜日</small><b>${now.getDate()}</b>`:app.id==='photos'?A.photosIcon():A.icon(app.id)}</span><span class="app-name">${app.name}</span>${app.id==='mail'&&(A.mailUnread?.()??3)>0?`<span class="app-badge">${Math.min(99,A.mailUnread?.()??3)}</span>`:app.id==='messages'&&(A.messageUnread?.()??2)>0?`<span class="app-badge">${Math.min(99,A.messageUnread?.()??2)}</span>`:''}</button>`; };
-  A.renderHome = () => { A.$('#app-grid').innerHTML=appData.slice(0,16).map(([id])=>A.launcher(A.apps[id])).join('');A.$('#home-dock').innerHTML=appData.slice(16).map(([id])=>A.launcher(A.apps[id],true)).join(''); };
+  A.renderHome = () => { A.$('#app-grid').innerHTML=appData.slice(0,-4).map(([id])=>A.launcher(A.apps[id])).join('');A.$('#home-dock').innerHTML=appData.slice(-4).map(([id])=>A.launcher(A.apps[id],true)).join(''); };
   A.haptic = () => { if(A.settings.sound && navigator.vibrate && navigator.userActivation?.hasBeenActive) navigator.vibrate(7); };
   let toastTimer;
   A.toast = message => { const el=A.$('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('visible'),3200); };
@@ -119,7 +124,7 @@
   A.actions.lock=A.lock;
   A.actions.controlPlay=()=>{A.music?.toggle();A.controls();};
   A.actions.flashlight=()=>{const el=document.createElement('div');el.className='flashlight-screen';el.innerHTML='<button>タップしてライトを消す</button>';el.onclick=()=>el.remove();A.$('#phone-screen').appendChild(el);};
-  A.actions.about=()=>A.overlay(`${A.overlayTitle('About this little world')}<div class="about-hero">aura.</div><p class="about-copy">手のひらに、もうひとつの世界。<br>いつもの日常に、少しの好奇心を。</p><div class="about-stats"><div><strong>20</strong><span>APPS</span></div><div><strong>03</strong><span>GAMES</span></div><div><strong>∞</strong><span>CURIOSITY</span></div></div><p class="about-note">auraは、ブラウザの中で動く架空のスマートフォンです。実際のOS、通信サービス、銀行・医療サービスではありません。<br><br>天気はOpen-Meteo、地図はOpenStreetMap、記事検索はWikipediaと接続します。電話・SMS・メールは端末の対応アプリで最終操作を行います。デモと実連携は区別されます。ヘルスケアの自動計測と実決済は未接続です。<br><br>メモ、設定、写真などはこのブラウザに保存されます。録音はアプリを閉じるまで保持されます。データは他の端末へ同期されません。カメラ・マイクの利用には許可が必要です。</p><p class="control-footer">auraOS 3.0 / CONNECTED EDITION</p>`);
+  A.actions.about=()=>A.overlay(`${A.overlayTitle('About this little world')}<div class="about-hero">aura.</div><p class="about-copy">手のひらに、もうひとつの世界。<br>いつもの日常に、少しの好奇心を。</p><div class="about-stats"><div><strong>30</strong><span>APPS</span></div><div><strong>03</strong><span>GAMES</span></div><div><strong>∞</strong><span>CURIOSITY</span></div></div><p class="about-note">auraは、ブラウザの中で動く架空のスマートフォンです。実際のOS、通信サービス、銀行・医療サービスではありません。<br><br>天気はOpen-Meteo、地図はOpenStreetMap、記事検索はWikipediaと接続します。電話・SMS・メールは端末の対応アプリで最終操作を行います。デモと実連携は区別されます。ヘルスケアの自動計測と実決済は未接続です。<br><br>メモ、設定、写真などはこのブラウザに保存されます。録音はアプリを閉じるまで保持されます。データは他の端末へ同期されません。カメラ・マイクの利用には許可が必要です。</p><p class="control-footer">auraOS 4.0 / EVERYDAY EDITION</p>`);
   A.spotlight = () => { A.overlay(`${A.overlayTitle('見つけよう。')}<label class="spotlight-input">${A.icon('search')}<input id="spotlight-query" placeholder="アプリを検索" aria-label="アプリを検索" autocomplete="off"></label><p class="spotlight-label">あなたの小さな世界</p><div class="spotlight-results" id="spotlight-results"></div>`);const render=q=>{const matches=Object.values(A.apps).filter(a=>(a.name+a.id).toLowerCase().includes(q.toLowerCase()));A.$('#spotlight-results').innerHTML=matches.map(a=>A.launcher(a)).join('')||'<p style="grid-column:span 4;font-size:12px;opacity:.65">該当するアプリはありません。</p>';};render('');A.$('#spotlight-query').oninput=e=>render(e.target.value);setTimeout(()=>A.$('#spotlight-query')?.focus(),120); };
   let notificationsCleared=false;
   A.notifications = () => { if(notificationsCleared){A.actions.clearNotifications();return;} A.overlay(`${A.overlayTitle('通知センター')}<p style="font-size:12px;opacity:.6;margin-bottom:30px">${new Date().toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'long'})}</p><div class="group-card" style="background:#ffffff15">${A.row('messages','美咲','週末は、どこか出かけよう ☀','notificationChat','','#60b47b')}${A.row('mail','aura studio','あなたの小さな世界へ、ようこそ。','notificationMail','','#478cdb')}</div><p class="control-footer">デモ通知です。ここからアプリを開けます。</p><button class="primary-button" data-action="clearNotifications" style="background:#ffffff15;margin-top:25px">通知をクリア</button>`); };
@@ -203,13 +208,15 @@
   const defaultOrder=appData.map(([id])=>id);
   let homeOrder=A.load('homeOrder',defaultOrder);
   if(!Array.isArray(homeOrder))homeOrder=defaultOrder;
-  homeOrder=[...new Set(homeOrder.filter(id=>defaultOrder.includes(id))),...defaultOrder.filter(id=>!homeOrder.includes(id))];
+  homeOrder=[...new Set(homeOrder.filter(id=>defaultOrder.includes(id)))];
+  const missingApps=defaultOrder.filter(id=>!homeOrder.includes(id));
+  homeOrder.splice(Math.max(0,homeOrder.length-4),0,...missingApps);
   let editing=false,selectedIcon=null;
   const smallIcon=id=>`<span class="mini-app" style="background:${A.apps[id].color}">${id==='photos'?A.photosIcon():A.icon(id)}</span>`;
   A.finishHomeEditing=()=>{editing=false;selectedIcon=null;};
   A.renderHome=()=>{
-    A.$('#app-grid').innerHTML=homeOrder.slice(0,16).map(id=>A.launcher(A.apps[id])).join('');
-    A.$('#home-dock').innerHTML=homeOrder.slice(16).map(id=>A.launcher(A.apps[id],true)).join('');
+    A.$('#app-grid').innerHTML=homeOrder.slice(0,-4).map(id=>A.launcher(A.apps[id])).join('');
+    A.$('#home-dock').innerHTML=homeOrder.slice(-4).map(id=>A.launcher(A.apps[id],true)).join('');
     A.$('#home-screen').classList.toggle('home-editing',editing);
     A.$$('#home-screen .app-launcher').forEach(el=>{
       el.draggable=editing;
@@ -260,7 +267,7 @@
   homeScreen.addEventListener('pointermove',e=>{if(pressPoint&&Math.hypot(e.clientX-pressPoint.x,e.clientY-pressPoint.y)>9)clearTimeout(pressTimer);});
   ['pointerup','pointercancel','pointerleave'].forEach(type=>homeScreen.addEventListener(type,()=>clearTimeout(pressTimer)));
   A.library=()=>{
-    const groups=[['よく使う',A.recentApps.length?A.recentApps.slice(0,4):['messages','photos','music','safari']],['つながる',['phone','messages','mail','safari']],['毎日のこと',['calendar','notes','reminders','files']],['クリエイティブ',['photos','camera','music','recorder']],['暮らしと発見',['weather','maps','health','wallet']],['ユーティリティ',['clock','calculator','settings','games']]];
+    const groups=[['よく使う',A.recentApps.length?A.recentApps.slice(0,4):['today','focus','habits','journal']],['つながる',['phone','messages','mail','safari','contacts']],['毎日のこと',['calendar','notes','reminders','files','today']],['クリエイティブ',['photos','camera','music','recorder','sketch']],['暮らしと発見',['weather','maps','health','wallet','expenses','shopping']],['自分の時間',['focus','habits','journal','reading']],['ユーティリティ',['clock','calculator','settings','games','converter']]];
     A.overlay(`${A.overlayTitle('アプリライブラリ')}<label class="spotlight-input">${A.icon('search')}<input id="library-query" aria-label="ライブラリを検索" placeholder="アプリを検索" autocomplete="off"></label><div class="library-groups" id="library-groups">${groups.map(([name,ids])=>`<section class="library-category"><div>${ids.map(id=>A.launcher(A.apps[id])).join('')}</div><h3>${name}</h3></section>`).join('')}</div><div class="spotlight-results" id="library-results" hidden></div><p class="control-footer">すべてのアプリが、ここに。</p>`,'library-overlay');
     A.$('#library-query').oninput=e=>{const q=e.target.value.trim().toLowerCase();A.$('#library-groups').hidden=!!q;const results=A.$('#library-results');results.hidden=!q;results.innerHTML=Object.values(A.apps).filter(app=>(app.name+app.id).toLowerCase().includes(q)).map(app=>A.launcher(app)).join('')||'<p class="search-empty">アプリが見つかりません。</p>';};
   };
@@ -303,14 +310,15 @@
   A.open=(id,arg)=>{if(!A.apps[id]?.render)return;editing=false;selectedIcon=null;baseOpen(id,arg);};
   // Search uses local data only, and never injects user text as markup.
   A.spotlight=()=>{
-    A.overlay(`${A.overlayTitle('検索')}<label class="spotlight-input">${A.icon('search')}<input id="spotlight-query" placeholder="アプリ、メモ、リマインダー" aria-label="アプリ、メモ、リマインダーを検索" autocomplete="off"></label><p class="spotlight-label" id="spotlight-heading">アプリを見つける</p><div class="spotlight-results" id="spotlight-results"></div><div id="spotlight-content"></div><p class="control-footer">このaura内だけを検索します。</p>`,'spotlight-overlay');
+    A.overlay(`${A.overlayTitle('検索')}<label class="spotlight-input">${A.icon('search')}<input id="spotlight-query" placeholder="アプリ・記録を検索" aria-label="アプリと記録を検索" autocomplete="off"></label><p class="spotlight-label" id="spotlight-heading">アプリを見つける</p><div class="spotlight-results" id="spotlight-results"></div><div id="spotlight-content"></div><p class="control-footer">このaura内だけを検索します。</p>`,'spotlight-overlay');
     const render=value=>{
       const q=value.trim().toLowerCase();
       const apps=Object.values(A.apps).filter(app=>(app.name+app.id).toLowerCase().includes(q));
       A.$('#spotlight-results').innerHTML=apps.map(app=>A.launcher(app)).join('');
       const notes=q?(A.searchableNotes?.()||A.load('notes',[])).filter(n=>(n.title+n.body).toLowerCase().includes(q)).slice(0,5):[];
       const reminders=q?(A.searchableReminders?.()||A.load('reminders',[])).filter(r=>r.text.toLowerCase().includes(q)).slice(0,5):[];
-      A.$('#spotlight-content').innerHTML=(notes.length?`<p class="spotlight-label">メモ</p><div class="search-content-group">${notes.map(n=>`<button data-action="searchNote" data-id="${A.escape(n.id)}">${smallIcon('notes')}<span><strong>${A.escape(n.title||'新しいメモ')}</strong><small>${A.escape(n.body.slice(0,65))}</small></span>${A.icon('arrow')}</button>`).join('')}</div>`:'')+(reminders.length?`<p class="spotlight-label">リマインダー</p><div class="search-content-group">${reminders.map(r=>`<button data-app="reminders">${smallIcon('reminders')}<span><strong>${A.escape(r.text)}</strong><small>${r.done?'完了済み':'未完了'}</small></span></button>`).join('')}</div>`:'')+(!apps.length&&!notes.length&&!reminders.length?'<div class="search-empty">見つかりませんでした。<br><small>別のキーワードで試してみてください。</small></div>':'');
+      const extra=q?(A.searchAdditional?.(q)||''):'';
+      A.$('#spotlight-content').innerHTML=(notes.length?`<p class="spotlight-label">メモ</p><div class="search-content-group">${notes.map(n=>`<button data-action="searchNote" data-id="${A.escape(n.id)}">${smallIcon('notes')}<span><strong>${A.escape(n.title||'新しいメモ')}</strong><small>${A.escape(n.body.slice(0,65))}</small></span>${A.icon('arrow')}</button>`).join('')}</div>`:'')+(reminders.length?`<p class="spotlight-label">リマインダー</p><div class="search-content-group">${reminders.map(r=>`<button data-app="reminders">${smallIcon('reminders')}<span><strong>${A.escape(r.text)}</strong><small>${r.done?'完了済み':'未完了'}</small></span></button>`).join('')}</div>`:'')+extra+(!apps.length&&!notes.length&&!reminders.length&&!extra?'<div class="search-empty">見つかりませんでした。<br><small>別のキーワードで試してみてください。</small></div>':'');
     };
     render('');A.$('#spotlight-query').oninput=e=>render(e.target.value);setTimeout(()=>A.$('#spotlight-query')?.focus(),120);
   };

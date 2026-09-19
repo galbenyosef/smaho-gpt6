@@ -79,6 +79,16 @@
   };
 
   const capabilities = {
+    today:['今日のまとめ','予定・タスク・習慣・集中記録を端末内で集計。'],
+    focus:['集中タイマー','記録は端末内保存。ページ終了中は通知されません。'],
+    habits:['習慣の記録','達成日・連続日数を端末内で管理。'],
+    expenses:['家計簿・CSV出力','手入力の収支と予算。銀行や決済サービスへの接続はありません。'],
+    shopping:['買い物リスト','数量・予定額・購入状態を保存。テキスト出力に対応。'],
+    journal:['日記・気分の記録','端末内保存とテキスト出力。クラウド同期はありません。'],
+    contacts:['連絡先・vCard出力','自分で登録した相手の電話・SMS・メールを対応アプリへ引き渡します。'],
+    converter:['単位換算','長さ・重さ・温度・体積・面積・速度・データ容量を端末内で換算。'],
+    reading:['読書記録','本・進捗・読書メモを端末内で保存。'],
+    sketch:['スケッチ・PNG出力','描画を自動保存。画像の自動アップロードはありません。'],
     safari:['アプリ内検索・Webへ移動','Wikipediaは画面内、GoogleなどのWeb検索は別タブで利用。'],
     maps:['実地図・場所検索','OpenStreetMap / Nominatim。経路案内はGoogle マップへ引き渡します。'],
     weather:['実予報・保存キャッシュ','Open-Meteo。取得日時を表示し、取得失敗時は保存データと明示。'],
@@ -101,7 +111,8 @@
     settings:['接続状況・権限・プライバシー','Wi-FiなどのOS設定はシミュレーション。実通信状態とは別です。']
   };
   const nav = A.nav;
-  A.nav = (title, right = '', ...args) => nav(title, right + (A.current ? button('appConnections','連携') : ''), ...args);
+  const localApps = new Set(['today','focus','habits','expenses','shopping','journal','contacts','converter','reading','sketch']);
+  A.nav = (title, right = '', ...args) => nav(title, right + (A.current && !localApps.has(A.current) ? button('appConnections','連携') : ''), ...args);
   A.actions.appConnections = () => {
     const id = A.current, [title, detail] = capabilities[id] || capabilities.settings;
     const tools = {calendar:button('calendarExchange','予定を外部で使う'), notes:button('shareNotes','メモを共有'), reminders:button('shareReminders','リストを共有') + button('exportReminders','タスクを書き出す'), files:button('fileURLImport','URLから読む') + button('shareFile','開いているファイルを共有'), photos:button('photoShare','開いている写真を共有'), camera:'<button class="connection-link" data-app="photos">写真を開く</button>', calculator:button('currencyOpen','為替換算を開く'), clock:button('clockNotifyPermission','端末通知を有効にする'), health:button('healthExport','記録をJSONで書き出す')};
@@ -122,7 +133,7 @@
   N.calendarEvent = event => { const start = new Date(`${event.date}T${event.time || '00:00'}:00`); if (!Number.isFinite(start.getTime())) return null; const end = new Date(start.getTime()+3600000); return {start,end,google:'https://calendar.google.com/calendar/render?' + new URLSearchParams({action:'TEMPLATE',text:event.title || '予定',dates:`${dateICS(start)}/${dateICS(end)}`,location:event.place || '',details:'auraから作成（1時間の予定）。保存前に日時を確認してください。'})}; };
   A.actions.calendarExchange = () => A.overlay(`${A.overlayTitle('予定を外部で使う')}<div class="connected-overlay"><p class="connected-caption">開始時刻は端末のタイムゾーン（${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)}）、終了は1時間後。移動先で確認・保存してください。変更の同期はありません。</p>${button('calendarICS','全予定をICSで書き出す')}${(A.allEvents?.() || []).map(event => { const info = N.calendarEvent(event); return info ? `<div class="connection-divider">${esc(event.date)} ${esc(event.time)} · ${esc(event.title)}</div>${N.link(info.google,'Google カレンダーで作成')}` : ''; }).join('') || '<p>予定がありません。</p>'}</div>`);
   A.actions.calendarICS = () => { const lines = (A.allEvents?.() || []).flatMap(e => { const info = N.calendarEvent(e); return info ? ['BEGIN:VEVENT',`UID:${icsEscape(e.id)}@aura.local`,`DTSTAMP:${dateICS(new Date())}`,`DTSTART:${dateICS(info.start)}`,`DTEND:${dateICS(info.end)}`,`SUMMARY:${icsEscape(e.title)}`,`LOCATION:${icsEscape(e.place)}`,'END:VEVENT'] : []; }); if (!lines.length) return A.toast('書き出せる予定がありません'); icsDownload(lines,'aura-calendar.ics'); };
-  A.actions.exportReminders = () => icsDownload(A.searchableReminders().flatMap(r => ['BEGIN:VTODO',`UID:${icsEscape(r.id)}@aura.local`,`DTSTAMP:${dateICS(new Date())}`,`SUMMARY:${icsEscape(r.text)}`,`STATUS:${r.done ? 'COMPLETED' : 'NEEDS-ACTION'}`,'END:VTODO']),'aura-reminders.ics');
+  A.actions.exportReminders = () => icsDownload(A.searchableReminders().flatMap(r => ['BEGIN:VTODO',`UID:${icsEscape(r.id)}@aura.local`,`DTSTAMP:${dateICS(new Date())}`,`SUMMARY:${icsEscape(r.text)}`,`STATUS:${r.done ? 'COMPLETED' : 'NEEDS-ACTION'}`,`PRIORITY:${r.priority ? '1' : '0'}`,...(/^\d{4}-\d{2}-\d{2}$/.test(r.due || '') ? [`DUE;VALUE=DATE:${r.due.replace(/-/g,'')}`] : []),'END:VTODO']),'aura-reminders.ics');
   A.actions.shareFile = () => { const file = A.currentTextFile?.(); if (!file) return A.toast('先に共有するファイルを開いてください'); N.share(file.name,file.content); };
   A.actions.fileURLImport = () => {
     A.closeOverlay(); A.view(A.nav('URLからテキストを読む','','filesHome','戻る') + `<div class="app-content"><p class="app-subtitle">HTTPS / CORS対応の公開テキストを取り込みます。</p><form id="remote-file"><label class="form-label">URL</label><input name="url" class="text-input" type="url" required placeholder="https://example.com/data.txt" maxlength="2000"><label class="form-label">保存する名前</label><input name="name" class="text-input" required value="download.txt" maxlength="80"><button class="primary-button" type="submit" style="margin-top:16px">読み込んで保存</button></form><div id="remote-file-status" aria-live="polite"></div><p class="connected-caption">上限100KB。TXT / MD / JSON / CSV。認証付きURLやHTMLは非対応。取得したテキストはこのブラウザにのみ保存します。</p></div>`);
