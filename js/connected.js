@@ -114,6 +114,9 @@
   }
   function selectWeather(place) { if (!validPlace(place)) return; weatherPlace = place; A.save('weatherLocation', place); weatherError = ''; A.closeOverlay(); weather(); }
   A.apps.weather.render = weather;
+  A.actions.weatherSaveCity = () => { const saved=A.load('weatherFavorites',[]); if(!saved.some(p=>placeKey(p)===placeKey(weatherPlace))) { if(!A.save('weatherFavorites',[{...weatherPlace},...saved].slice(0,20)))return; } A.actions.weatherCities(); A.toast('都市を保存しました'); };
+  A.actions.weatherSavedCity = el => { const p=A.load('weatherFavorites',[]).find(p=>placeKey(p)===el.dataset.id);if(p)selectWeather(p); };
+  A.actions.weatherRemoveCity = el => { if(A.save('weatherFavorites',A.load('weatherFavorites',[]).filter(p=>placeKey(p)!==el.dataset.id)))A.actions.weatherCities(); };
   A.actions.weatherRefresh = () => refreshWeather(true);
   A.actions.weatherSelect = el => selectWeather(presets[Number(el.dataset.value)]);
   A.actions.weatherLocate = async () => {
@@ -122,6 +125,7 @@
   };
   A.actions.weatherCities = () => {
     A.overlay(`${A.overlayTitle('都市を探す')}<div class="connected-overlay">${submitSearch('city-search', '都市名（東京・Parisなど）')}<p class="connected-caption">検索語をOpen-Meteoの都市検索に送信します。</p><div id="city-results" aria-live="polite"></div><h3>よく使う都市</h3>${presets.map((p, i) => `<button class="list-row" data-action="weatherSelect" data-value="${i}">${esc(p.name)}</button>`).join('')}</div>`);
+    $('.connected-overlay').insertAdjacentHTML('afterbegin',`<div class="pd-weather-favorites"><button class="connection-link" data-action="weatherSaveCity">＋ ${esc(weatherPlace.name)}を保存</button>${A.load('weatherFavorites',[]).filter(validPlace).map(p=>`<div class="pd-saved-place"><button data-action="weatherSavedCity" data-id="${placeKey(p)}">${esc(p.name)}</button><button data-action="weatherRemoveCity" data-id="${placeKey(p)}" aria-label="${esc(p.name)}を保存から削除">×</button></div>`).join('')}</div>`);
     $('#city-search').onsubmit = async e => {
       e.preventDefault(); const root = $('#city-results'), q = e.currentTarget.querySelector('input').value.trim(); if (!q) return;
       cityController?.abort(); const controller = cityController = new AbortController(); root.innerHTML = stateBox('都市を検索しています…');
@@ -156,17 +160,24 @@
     A.statusTheme(false); $('#app-screen').classList.add('connected-maps');
     A.view(A.nav('マップ', button('mapLocate', '現在地')) + `<div class="connected-map-tools">${submitSearch('live-map-search', '地名・住所・施設名')}<div class="connection-toolbar">${button('mapRetry', '再読み込み')}${N.link('https://www.google.com/maps', 'Google マップ')}</div></div><div id="live-map" aria-label="OpenStreetMap 地図"></div><div id="map-results" class="connected-map-results" aria-live="polite">${stateBox('実地図を読み込んでいます…')}</div>`);
     const canvas = $('#live-map'), results = $('#map-results');
-    let map, marker, userMarker, resize;
+    let map, marker, userMarker, resize, selectedPlace=null;
     const controller = mapController = new AbortController();
     A.cleanups.push(() => { controller.abort(); resize?.disconnect(); if (map) { const center = map.getCenter(); mapPosition = [center.lat, center.lng]; mapLevel = map.getZoom(); map.remove(); } if (mapInstance === map) mapInstance = null; });
     const showPlace = p => {
       if (!map || !canvas.isConnected) return;
       const lat = Number(p.lat), lon = Number(p.lon); if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-      marker?.remove(); marker = window.L.circleMarker([lat, lon], {radius: 10, color: '#fff', weight: 3, fillColor: '#477cc6', fillOpacity: 1}).addTo(map);
+      selectedPlace={lat,lon,display_name:p.display_name};
+      marker?.remove(); marker = window.L.circleMarker([lat, lon], {radius: 10, color: '#fff', weight: 3, fillColor: '#477cc6', fillOpacity: 1, bubblingMouseEvents:false}).addTo(map);
       marker.bindPopup(document.createTextNode(p.display_name)).openPopup(); map.setView([lat, lon], 16);
       results.innerHTML = `<strong>${esc(p.display_name)}</strong><p>${lat.toFixed(5)}, ${lon.toFixed(5)}</p><div class="connection-toolbar">${N.link(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`, 'ここへの経路案内')}${N.link(`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`, '地図を開く')}<button class="connection-link" id="share-place">場所を共有</button></div><p class="connected-caption">経路はGoogle マップで計算します。アプリ内に架空のルートは表示しません。</p>`;
       $('#share-place').onclick = () => N.share('場所を共有', p.display_name, `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`);
+      $('#share-place').insertAdjacentHTML('afterend','<button class="connection-link" data-action="mapSavePlace">場所を保存</button>');
     };
+    $('.connected-map-tools .connection-toolbar').insertAdjacentHTML('afterbegin','<button class="connection-link" data-action="mapSaved">保存した場所</button>');
+    A.actions.mapSavePlace=()=>{if(!selectedPlace)return;const current=selectedPlace,saved=A.load('mapSavedPlaces',[]),existing=saved.find(p=>p.lat===current.lat&&p.lon===current.lon);A.form('場所を保存',`<label class="form-label">名前</label><input class="text-input" name="name" required maxlength="100" value="${esc(existing?.name||current.display_name.split(',')[0])}"><label class="form-label">分類</label><select class="text-input" name="category">${['お気に入り','行きたい','仕事'].map(c=>`<option ${existing?.category===c?'selected':''}>${c}</option>`).join('')}</select><label class="form-label">メモ</label><textarea class="text-input" name="note" rows="3" maxlength="400">${esc(existing?.note||'')}</textarea>`,v=>{if(!v.name.trim())return false;const item={...current,...v,name:v.name.trim(),id:existing?.id||A.id()},rows=existing?saved.map(p=>p.id===existing.id?item:p):[item,...saved];if(!A.save('mapSavedPlaces',rows))return false;A.toast('場所を保存しました');});};
+    A.actions.mapSaved=()=>A.overlay(`${A.overlayTitle('保存した場所')}<div class="pd-menu">${A.load('mapSavedPlaces',[]).map(p=>`<div class="pd-saved-place"><button data-action="mapSavedOpen" data-id="${esc(p.id)}"><strong>${esc(p.name)}</strong><small>${esc(p.category||'')}${p.note?' · '+esc(p.note):''}</small></button><button data-action="mapSavedDelete" data-id="${esc(p.id)}" aria-label="${esc(p.name)}を削除">×</button></div>`).join('')||'<p>場所を選んで保存できます</p>'}</div>`);
+    A.actions.mapSavedOpen=el=>{if(!map||!canvas.isConnected)return A.toast('地図の読み込みを待ってください');const p=A.load('mapSavedPlaces',[]).find(x=>x.id===el.dataset.id);if(p){A.closeOverlay();showPlace(p);}};
+    A.actions.mapSavedDelete=el=>A.confirm('保存した場所を削除？','',()=>{if(A.save('mapSavedPlaces',A.load('mapSavedPlaces',[]).filter(p=>p.id!==el.dataset.id)))A.actions.mapSaved();});
     $('#live-map-search').onsubmit = async e => {
       e.preventDefault(); const q = e.currentTarget.querySelector('input').value.trim(); if (!q) return;
       if (!map) { results.innerHTML = stateBox('地図を読み込んでから検索してください。', 'mapRetry'); return; }
@@ -200,6 +211,7 @@
     try {
       const L = await loadLeaflet(); if (!canvas.isConnected || controller.signal.aborted) return;
       map = mapInstance = L.map(canvas, {zoomControl: true}).setView(mapPosition, mapLevel);
+      map.on('click',e=>showPlace({lat:e.latlng.lat,lon:e.latlng.lng,display_name:'ピン留めした場所'}));
       const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'}).addTo(map);
       let failed = false;
       tiles.on('tileerror', () => { if (!failed && results.isConnected) { failed = true; results.innerHTML = stateBox('地図タイルを取得できません。通信を確認して再読み込みしてください。', 'mapRetry') + N.link('https://www.openstreetmap.org/', 'OpenStreetMapを開く'); } });
