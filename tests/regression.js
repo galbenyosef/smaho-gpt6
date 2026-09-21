@@ -94,7 +94,188 @@ frame.addEventListener('load',async()=>{
  await test('Calculator arithmetic and repeat equals',()=>{A.open('calculator');for(const v of ['clear','1','2','+','7','='])click(`[data-action="calcKey"][data-value="${v}"]`);assert(d.querySelector('#calc-result').textContent==='19','12+7');click('[data-action="calcKey"][data-value="="]');assert(d.querySelector('#calc-result').textContent==='26','Repeat equals');});
  await test('Calculator divide by zero and recovery',()=>{for(const v of ['clear','5','/','0','='])click(`[data-action="calcKey"][data-value="${v}"]`);assert(d.querySelector('#calc-result').textContent==='エラー','Division by zero');click('[data-action="calcKey"][data-value="3"]');assert(d.querySelector('#calc-result').textContent==='3','Error recovery');});
  await test('Notes autosave and safe text rendering',()=>{A.open('notes');click('[data-action="noteNew"]');input('#note-title','QA <b>safe</b>');input('#note-body','A little world.\nRegression note.');A.home();A.open('notes');const notes=A.load('notes',[]);assert(notes.some(n=>n.title==='QA <b>safe</b>'),'Note not stored');const card=[...d.querySelectorAll('.note-card')].find(c=>c.textContent.includes('QA <b>safe</b>'));assert(card,'Escaping failed');assert(!card.querySelector('b'),'Markup injected');});
+ // Isolated Notes Studio fixtures; restore the existing notes after each scenario.
+ const noteStudioTest=(name,fn)=>test('Notes Studio: '+name,async()=>{
+  const saved=JSON.parse(JSON.stringify(A.noteModel.get())),trash=A.load('noteTrash',[]),layout=A.load('noteLayout','grid');
+  try{
+   A.noteModel.replace([{id:'studio-a',title:'紙 <b>safe</b>',body:'☑ 完了\n☐ 次の一歩',tags:'idea <img src=x>',folder:'仕事 <b>safe</b>',pinned:true,updated:1000},{id:'studio-b',title:'白紙',body:'',updated:2000}]);
+   A.open('notes');A.actions.pdNoteReset();await fn();
+  }finally{A.closeOverlay();A.actions.pdNoteRetry();A.noteModel.replace(saved,{noteTrash:trash});A.actions.pdNoteReset();A.actions.pdNoteLayout({dataset:{id:layout}});}
+ });
+ await noteStudioTest('paper cards escape text and never migrate existing records',()=>{
+  const before=JSON.stringify(A.noteModel.get());A.open('notes');assert(JSON.stringify(A.noteModel.get())===before,'Read rewrote model');
+  const card=d.querySelector('.memo-card');assert(card.dataset.id==='studio-a','Pinned ordering');
+  assert(card.querySelector('.memo-progress').textContent.includes('1 / 2'),'Progress text');assert(card.querySelector('.memo-progress-track i').style.width==='50%','Progress fill');
+  assert(!d.querySelector('.memo-studio b,.memo-studio img'),'Unsafe text injected');assert(d.querySelector('.memo-art').getAttribute('aria-hidden')==='true','Decorative artwork announced');
+ });
+ await noteStudioTest('layout and search compose with pin and folder filters',()=>{
+  click('[data-action="pdNoteLayout"][data-id="list"]');A.home();A.open('notes');assert(d.querySelector('#notes-grid').dataset.layout==='list'&&A.load('noteLayout')==='list','Layout did not persist');
+  click('[data-action="pdNoteFilter"][data-id="pinned"]');assert(d.querySelectorAll('.memo-card').length===1&&d.querySelector('#pd-note-folder').value==='pinned','Pin filter mismatch');
+  input('#notes-search','idea');assert(d.querySelectorAll('.memo-card').length===1,'Tag search');input('#notes-search','no-match-studio');assert(d.querySelector('.memo-empty'),'Empty results missing');
+  click('[data-action="pdNoteReset"]');const folder=d.querySelector('#pd-note-folder');folder.value='仕事 <b>safe</b>';folder.dispatchEvent(new w.Event('change'));assert(d.querySelectorAll('.memo-card').length===1,'Folder filter');
+ });
+ await noteStudioTest('stationery and focus preserve textarea, selection and metadata',()=>{
+  click('.memo-card');const body=d.querySelector('#note-body');body.setSelectionRange(2,4);
+  for(const [key,id] of [['tone','lavender'],['paper','dots'],['font','serif']])A.actions.pdNoteStyle({dataset:{key,id}});
+  click('[data-action="pdNoteFocus"]');assert(d.querySelector('.memo-editor').dataset.focus==='true','Focus not enabled');assert(d.querySelector('#note-body')===body&&body.selectionStart===2&&body.selectionEnd===4,'Appearance replaced editor');
+  input('#note-body','new text');const n=A.noteModel.get()[0];assert(n.tone==='lavender'&&n.paper==='dots'&&n.font==='serif'&&n.tags==='idea <img src=x>','Editing lost metadata');
+  click('[data-action="pdNoteFocus"]');A.actions.noteList();assert(d.querySelector('.memo-card').dataset.tone==='lavender','Card lost chosen color');
+ });
+ await noteStudioTest('invalid styles fall back and failed writes do not apply',()=>{
+  const n=A.noteModel.get()[0];A.noteModel.replace([{...n,tone:'__proto__',paper:'bad',font:'bad'}]);A.actions.pdNoteReset();click('.memo-card');
+  assert(d.querySelector('.memo-paper').dataset.paper==='ruled'&&d.querySelector('.memo-paper').dataset.font==='sans','Invalid style fallback');
+  const before=JSON.stringify(A.noteModel.get()),replace=A.noteModel.replace;
+  try{A.noteModel.replace=()=>false;A.actions.pdNoteStyle({dataset:{key:'paper',id:'dots'}});assert(d.querySelector('.memo-paper').dataset.paper==='ruled','Failed style applied');}finally{A.noteModel.replace=replace;}
+  A.actions.pdNoteStyle({dataset:{key:'__proto__',id:'dots'}});assert(JSON.stringify(A.noteModel.get())===before,'Invalid key changed data');
+ });
+ await noteStudioTest('failed drafts survive navigation, export, retry and blocked redraws',async()=>{
+  click('.memo-card');const replace=A.noteModel.replace,download=A.download;let blob;
+  try{
+   A.noteModel.replace=()=>false;input('#note-body','大切な未保存の下書き');assert(!d.querySelector('#memo-save-retry').hidden,'Retry missing');
+   click('[data-action="pdNotePreview"]');assert(!d.querySelector('#note-body').hidden,'Failed draft discarded by preview');
+   A.home();A.open('notes');assert(d.querySelector('.memo-card').textContent.includes('未保存'),'Unsaved badge missing');click('.memo-card');assert(d.querySelector('#note-body').value==='大切な未保存の下書き','Navigation lost draft');
+   A.download=value=>blob=value;A.actions.pdNoteExport();assert((await blob.text()).includes('大切な未保存の下書き'),'Export omitted draft');
+  }finally{A.noteModel.replace=replace;A.download=download;A.actions.pdNoteRetry();}
+  assert(A.noteModel.get()[0].body==='大切な未保存の下書き','Retry did not save');assert(d.querySelector('#note-save-status').dataset.state==='saved'&&d.querySelector('#memo-save-warning').hidden,'Warning did not clear');
+ });
+ await noteStudioTest('IME composition and checklist previews save safely',()=>{
+  click('.memo-card');const body=d.querySelector('#note-body'),before=A.noteModel.get()[0].body;
+  body.value='変換中';body.dispatchEvent(new w.InputEvent('input',{isComposing:true,bubbles:true}));assert(A.noteModel.get()[0].body===before,'Composition saved prematurely');
+  body.dispatchEvent(new w.CompositionEvent('compositionend',{bubbles:true}));assert(A.noteModel.get()[0].body==='変換中','IME completion not saved');
+  input('#note-body','☐ 一歩\n☑ 完了');assert(d.querySelector('#note-length').textContent==='9字','Character count');click('[data-action="pdNotePreview"]');click('.pd-checkline');assert(A.noteModel.get()[0].body.startsWith('☑'),'Checklist toggle failed');
+ });
+ await noteStudioTest('empty-state creation, templates and trash preserve chosen appearance',()=>{
+  A.noteModel.replace([]);A.actions.pdNoteReset();click('.memo-empty [data-action="noteNew"]');assert(d.querySelector('#note-title'),'Empty create');A.actions.noteList();click('.memo-quickstart [data-id="checklist"]');
+  assert(d.querySelector('#note-body').value.split('☐').length===4,'Quick template');A.actions.pdNoteStyle({dataset:{key:'tone',id:'rose'}});const id=A.noteModel.get()[0].id;
+  A.actions.noteDelete();A.actions.pdNoteTrash();A.actions.pdNoteRestore({dataset:{id}});assert(A.noteModel.get().find(n=>n.id===id).tone==='rose','Restore lost color');
+ });
+ await noteStudioTest('small screens, dark mode, large text and reduced motion fit',async()=>{
+  const style=frame.getAttribute('style'),settings={...A.settings};
+  try{for(const [width,height,dark,textSize] of [[320,568,false,'standard'],[390,844,true,'standard'],[320,568,true,'largest'],[844,390,false,'standard'],[1440,900,false,'standard']]){
+   frame.style.width=width+'px';frame.style.height=height+'px';Object.assign(A.settings,{dark,textSize,reduceMotion:true});A.applySettings();A.actions.pdNoteReset();await delay(40);
+   const library=d.querySelector('.memo-library');assert(library.scrollWidth<=library.clientWidth+1,'Library overflow '+width);assert(w.getComputedStyle(d.querySelector('.memo-card')).transitionDuration==='0s','Motion preference ignored');
+   click('.memo-card');d.querySelector('.memo-style-panel').open=true;const editor=d.querySelector('.memo-editor');assert(editor.scrollWidth<=editor.clientWidth+1,'Editor overflow '+width);click('[data-action="pdNoteFocus"]');assert(editor.scrollWidth<=editor.clientWidth+1,'Focus overflow '+width);
+  }}finally{Object.assign(A.settings,settings);A.applySettings();if(style===null)frame.removeAttribute('style');else frame.setAttribute('style',style);}
+ });
  await test('Reminder create and toggle',()=>{A.open('reminders');const f=d.querySelector('#reminder-form');f.elements.text.value='QA reminder';f.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));const item=A.load('reminders',[]).find(r=>r.text==='QA reminder');assert(item,'Reminder not persisted');click(`[data-action="reminderToggle"][data-id="${item.id}"]`);assert(A.load('reminders',[]).find(r=>r.id===item.id).done,'Reminder toggle');});
+
+ // Reminder Studio regression fixtures never replace the user's original records.
+ const reminderDay=(offset=0)=>{const date=new w.Date();date.setDate(date.getDate()+offset);return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;};
+ const reminderTest=async(name,fn)=>test('Reminder Studio: '+name,async()=>{
+  const original=JSON.parse(JSON.stringify(A.reminderModel.get()));
+  try{
+   A.reminderModel.replace([
+    {id:'rm-old',text:'過去の用事',due:reminderDay(-1),done:false,list:'仕事',note:'検索用 ABC',steps:[{id:'s1',text:'準備',done:true}]},
+    {id:'rm-today',text:'今日の用事',due:reminderDay(),done:false,priority:true},
+    {id:'rm-next',text:'次の用事',due:reminderDay(7),done:false,list:'暮らし'},
+    {id:'rm-far',text:'先の用事',due:reminderDay(8),done:false},
+    {id:'rm-none',text:'期限なし',due:'',done:false},
+    {id:'rm-done',text:'終わった用事',due:reminderDay(),done:true}
+   ]);A.open('reminders');A.actions.rmResetFilters();await fn();
+  }finally{A.closeOverlay();A.reminderModel.replace(original);A.open('reminders');A.actions.rmResetFilters();}
+ });
+ await reminderTest('smart filters include overdue and exclude completed tasks',()=>{
+  const filter=(id,count)=>{A.actions.reminderFilter({dataset:{id}});assert(d.querySelectorAll('.rm-task').length===count,id+' count');};
+  filter('today',2);filter('upcoming',1);filter('priority',1);filter('pending',5);filter('done',1);filter('all',6);
+  const none=d.querySelector('[data-action="epReminderOpen"][data-id="rm-none"]');assert(!none.textContent.includes('期限超過'),'Empty deadline marked overdue');
+  assert(d.querySelectorAll('.rm-group').length===5,'Deadline groups missing');
+ });
+ await reminderTest('normalized search includes notes and steps; list filters compose',()=>{
+  input('#ep-reminder-query','ａｂｃ');assert(d.querySelectorAll('.rm-task').length===1,'NFKC search failed');
+  input('#ep-reminder-query','準備');assert(d.querySelectorAll('.rm-task').length===1,'Step search failed');
+  const filter=d.querySelector('#rm-list-filter');filter.value='暮らし';filter.dispatchEvent(new w.Event('change'));assert(d.querySelector('.rm-empty'),'List and query do not compose');
+  A.actions.rmResetFilters();assert(d.querySelectorAll('.rm-task').length===6,'Reset did not clear all conditions');
+ });
+ await reminderTest('quick capture keeps drafts across filters and applies date',()=>{
+  input('#reminder-form input','新しい用事');A.actions.reminderFilter({dataset:{id:'today'}});assert(d.querySelector('#reminder-form input').value==='新しい用事','Draft lost');
+  A.actions.rmQuickDue({dataset:{id:reminderDay(1)}});submit('#reminder-form');
+  const item=A.reminderModel.get().find(x=>x.text==='新しい用事');assert(item&&item.due===reminderDay(1),'Quick date not saved');
+  assert(d.querySelector('#reminder-form input')===d.activeElement,'Continuous capture lost focus');A.actions.rmUndo();assert(!A.reminderModel.get().some(x=>x.id===item.id),'Quick create undo');
+  A.actions.rmQuickDue({dataset:{id:''}});
+ });
+ await reminderTest('editor preserves checklist identities and escapes content',()=>{
+  A.actions.reminderDetails({dataset:{id:'rm-old'}});
+  input('#ep-text','<img src=x onerror=alert(1)>');input('#ep-steps','準備\n仕上げ');input('#ep-list','企画');submit('#modal-form');
+  const item=A.reminderModel.get().find(x=>x.id==='rm-old');assert(item.steps.length===2&&item.steps[0].id==='s1'&&item.steps[0].done,'Checklist identity lost');
+  assert(item.list==='企画','List not saved');assert(!d.querySelector('.rm-detail-hero img'),'Unsafe title');assert(d.querySelectorAll('.rm-step').length===2,'Detail steps missing');
+  click('[data-action="epReminderStep"][data-step="s1"]');assert(!A.reminderModel.get().find(x=>x.id==='rm-old').steps[0].done,'Step toggle failed');assert(!A.reminderModel.get().find(x=>x.id==='rm-old').done,'Step completed parent');
+ });
+ await reminderTest('daily recurrence resets steps and undo removes next instance',()=>{
+  A.reminderModel.replace(A.reminderModel.get().map(x=>x.id==='rm-old'?{...x,repeat:'daily'}:x));
+  A.actions.reminderToggle({dataset:{id:'rm-old'}});const all=A.reminderModel.get(),item=all.find(x=>x.id==='rm-old'),next=all.find(x=>x.id===item.repeatNextId);
+  assert(item.done&&next&&next.due===reminderDay(1)&&!next.done,'Next daily instance missing');assert(!next.steps[0].done&&next.steps[0].id!=='s1','Checklist not reset');
+  A.actions.rmUndo();assert(A.reminderModel.get().length===6&&!A.reminderModel.get().find(x=>x.id==='rm-old').done,'Recurring undo not atomic');
+ });
+ await reminderTest('weekly recurrence is shared with Today and never duplicates on retoggle',()=>{
+  A.reminderModel.replace(A.reminderModel.get().map(x=>x.id==='rm-today'?{...x,repeat:'weekly'}:x));
+  A.open('today');A.actions.evTodayCheck({dataset:{id:'rm-today'}});
+  let all=A.reminderModel.get(),item=all.find(x=>x.id==='rm-today');assert(all.find(x=>x.id===item.repeatNextId)?.due===reminderDay(7),'Today skipped weekly repeat');
+  A.open('reminders');A.actions.reminderToggle({dataset:{id:'rm-today'}});A.actions.reminderToggle({dataset:{id:'rm-today'}});assert(A.reminderModel.get().length===7,'Retoggle duplicated next task');
+ });
+ await reminderTest('priority changes and delete support undo',()=>{
+  A.actions.rmPriority({dataset:{id:'rm-none'}});assert(A.reminderModel.get().find(x=>x.id==='rm-none').priority,'Priority missing');A.actions.rmUndo();assert(!A.reminderModel.get().find(x=>x.id==='rm-none').priority,'Priority undo failed');
+  A.actions.reminderDelete({dataset:{id:'rm-old'}});click('#confirm-yes');assert(!A.reminderModel.get().some(x=>x.id==='rm-old'),'Delete failed');A.actions.rmUndo();assert(A.reminderModel.get().find(x=>x.id==='rm-old').steps[0].done,'Deleted steps not restored');
+ });
+ await reminderTest('undo refuses to overwrite external model changes',()=>{
+  A.actions.rmPriority({dataset:{id:'rm-none'}});A.reminderModel.replace([...A.reminderModel.get(),{id:'rm-external',text:'他画面で追加',done:false}]);A.actions.rmUndo();
+  assert(A.reminderModel.get().some(x=>x.id==='rm-external'),'Undo overwrote another edit');assert(A.reminderModel.get().find(x=>x.id==='rm-none').priority,'Stale undo applied');
+ });
+ await reminderTest('failed save keeps model, draft and last undo untouched',()=>{
+  const saved=A.save,before=JSON.stringify(A.reminderModel.get());input('#reminder-form input','保存失敗の下書き');
+  try{A.save=()=>false;submit('#reminder-form');A.actions.reminderToggle({dataset:{id:'rm-today'}});assert(JSON.stringify(A.reminderModel.get())===before,'Failed save changed model');assert(d.querySelector('#reminder-form input').value==='保存失敗の下書き','Failed save lost draft');}finally{A.save=saved;input('#reminder-form input','');}
+ });
+ await reminderTest('postponement and duplication preserve the original task',()=>{
+  A.actions.epReminderPostpone({dataset:{id:'rm-old'}});assert(A.reminderModel.get().find(x=>x.id==='rm-old').due===reminderDay(1),'Overdue postponement should use tomorrow');A.actions.rmUndo();
+  A.actions.epReminderDuplicate({dataset:{id:'rm-old'}});const copy=A.reminderModel.get().find(x=>x.text==='過去の用事 コピー');assert(copy&&!copy.done&&!copy.steps[0].done&&copy.steps[0].id!=='s1','Duplicate shares completed steps');A.actions.rmUndo();assert(A.reminderModel.get().length===6,'Duplicate undo failed');
+ });
+ await reminderTest('editor validates list names and checklist limits',()=>{
+  A.actions.reminderDetails();input('#ep-text','制限の確認');input('#ep-list','*');submit('#modal-form');assert(!d.querySelector('#overlay').hidden,'Reserved list accepted');
+  input('#ep-list','仕事');input('#ep-steps',Array(31).fill('手順').join('\n'));submit('#modal-form');assert(!d.querySelector('#overlay').hidden,'Too many steps accepted');
+ });
+ await reminderTest('bulk clear removes only done records and is reversible',()=>{
+  A.actions.reminderClearDone();click('#confirm-yes');assert(A.reminderModel.get().length===5&&!A.reminderModel.get().some(x=>x.done),'Bulk clear affected pending');A.actions.rmUndo();assert(A.reminderModel.get().length===6,'Bulk clear undo failed');
+ });
+ await reminderTest('bulk selection drops hidden tasks before mutation',()=>{
+  A.actions.rmSelectionMode();A.actions.rmSelectAll();assert(d.querySelectorAll('.rm-select[aria-pressed=true]').length===6,'Select all');
+  input('#ep-reminder-query','過去の用事');assert(d.querySelectorAll('.rm-select[aria-pressed=true]').length===1,'Hidden selection retained');
+  A.actions.rmBatchTomorrow();assert(A.reminderModel.get().find(x=>x.id==='rm-old').due===reminderDay(1),'Selected not postponed');assert(A.reminderModel.get().find(x=>x.id==='rm-today').due===reminderDay(),'Hidden item mutated');
+  A.actions.rmUndo();assert(A.reminderModel.get().find(x=>x.id==='rm-old').due===reminderDay(-1),'Bulk undo failed');
+ });
+ await reminderTest('bulk completion commits recurring tasks together and undoes atomically',()=>{
+  A.reminderModel.replace(A.reminderModel.get().map(x=>x.id==='rm-old'?{...x,repeat:'daily'}:x));
+  A.actions.rmSelectionMode();for(const id of ['rm-old','rm-today','rm-done'])A.actions.rmSelect({dataset:{id}});A.actions.rmBatchComplete();
+  const all=A.reminderModel.get();assert(all.length===7&&all.find(x=>x.id==='rm-old').done&&all.find(x=>x.id==='rm-today').done,'Bulk completion failed');
+  A.actions.rmUndo();assert(A.reminderModel.get().length===6&&!A.reminderModel.get().find(x=>x.id==='rm-old').done,'Recurring bulk undo lost records');
+ });
+ await reminderTest('bulk recurrence date overflow rejects the entire change',()=>{
+  A.reminderModel.replace(A.reminderModel.get().map(x=>x.id==='rm-old'?{...x,repeat:'daily',due:'9999-12-31'}:x));A.actions.rmResetFilters();
+  A.actions.rmSelectionMode();for(const id of ['rm-today','rm-old'])A.actions.rmSelect({dataset:{id}});
+  const before=JSON.stringify(A.reminderModel.get());A.actions.rmBatchComplete();assert(JSON.stringify(A.reminderModel.get())===before,'Partial batch committed');
+ });
+ await reminderTest('bulk move validates and deletion requires confirmation',()=>{
+  A.actions.rmSelectionMode();A.actions.rmSelect({dataset:{id:'rm-old'}});A.actions.rmBatchMove();input('#ep-list','*');submit('#modal-form');assert(!d.querySelector('#overlay').hidden,'Reserved name accepted');
+  input('#ep-list','新しいリスト');submit('#modal-form');assert(A.reminderModel.get().find(x=>x.id==='rm-old').list==='新しいリスト','Move failed');A.actions.rmUndo();
+  A.actions.rmSelectionMode();A.actions.rmSelect({dataset:{id:'rm-old'}});A.actions.rmBatchDelete();A.closeOverlay();assert(A.reminderModel.get().length===6,'Cancellation deleted data');
+  A.actions.rmBatchDelete();click('#confirm-yes');assert(A.reminderModel.get().length===5,'Batch delete failed');A.actions.rmUndo();assert(A.reminderModel.get().find(x=>x.id==='rm-old').steps.length===1,'Batch deletion lost steps');
+ });
+ await reminderTest('bulk storage failure keeps selections and supports retry',()=>{
+  A.actions.rmSelectionMode();A.actions.rmSelect({dataset:{id:'rm-old'}});const before=JSON.stringify(A.reminderModel.get()),save=A.save;
+  try{A.save=()=>false;A.actions.rmBatchComplete();assert(JSON.stringify(A.reminderModel.get())===before,'Failed batch changed data');assert(d.querySelector('.rm-select[aria-pressed=true]'),'Selection lost on failure');}finally{A.save=save;}
+  A.actions.rmBatchComplete();assert(A.reminderModel.get().find(x=>x.id==='rm-old').done,'Retry failed');
+ });
+ await reminderTest('bulk capture validates limits and ignores empty lines',()=>{
+  A.actions.rmBulkAdd();input('#ep-bulk',Array(51).fill('項目').join('\n'));submit('#modal-form');assert(A.reminderModel.get().length===6,'Oversized import accepted');
+  input('#ep-bulk','一つ目\n\n二つ目');input('#ep-due',reminderDay(1));input('#ep-list','新しいリスト');submit('#modal-form');
+  const added=A.reminderModel.get().filter(x=>x.list==='新しいリスト');assert(added.length===2&&added.every(x=>x.due===reminderDay(1)),'Bulk capture did not preserve options');A.actions.rmUndo();assert(A.reminderModel.get().length===6,'Bulk add undo failed');
+ });
+ await reminderTest('inline steps preserve existing steps and reject failed saves',()=>{
+  A.actions.epReminderOpen({dataset:{id:'rm-old'}});input('#rm-step-form input','次の一歩');submit('#rm-step-form');let task=A.reminderModel.get().find(x=>x.id==='rm-old');assert(task.steps.length===2&&task.steps[0].done,'Inline step replaced history');
+  const save=A.save;try{A.save=()=>false;input('#rm-step-form input','保存の再試行');submit('#rm-step-form');assert(d.querySelector('#rm-step-form input').value==='保存の再試行','Inline draft lost');assert(A.reminderModel.get().find(x=>x.id==='rm-old').steps.length===2,'Unsaved step appended');}finally{A.save=save;}
+ });
+ await reminderTest('selection keyboard escape stays inside the reminders app',()=>{
+  A.actions.rmSelectionMode();const control=d.querySelector('[data-action=rmSelectionMode]');control.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  assert(A.current==='reminders'&&d.querySelector('[data-action=rmSelectionMode]').getAttribute('aria-pressed')==='false','Escape left app');
+ });
  await test('Calendar month navigation and event create',()=>{A.open('calendar');const before=d.querySelector('.calendar-month-head h3').textContent;click('[data-action="calendarMove"][data-value="1"]');assert(d.querySelector('.calendar-month-head h3').textContent!==before,'Month unchanged');click('[data-action="calendarAdd"]');const f=d.querySelector('#modal-form');f.elements.title.value='QA calendar event';f.elements.place.value='Local only';f.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));assert(A.load('events',[]).some(e=>e.title==='QA calendar event'),'Event not saved');});
  await test('Photo gallery and favorite',()=>{A.open('photos');click('[data-action="photoOpen"][data-id="sample-lake"]');assert(d.querySelector('.photo-viewer img'),'Photo missing');click('[data-action="photoFavorite"]');assert(A.load('photoFavorites',[]).includes('sample-lake'),'Favorite not saved');});
  await test('Camera permission is opt-in',()=>{A.open('camera');assert(d.querySelector('#camera-placeholder'),'No permission prompt');assert(!d.querySelector('#camera-video').srcObject,'Camera started without gesture');click('[data-action="cameraCapture"]');assert(d.querySelector('#toast').textContent.includes('先に'),'Missing capture warning');});
