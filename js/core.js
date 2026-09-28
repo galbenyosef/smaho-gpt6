@@ -4,8 +4,79 @@
   A.$ = (s, root = document) => root.querySelector(s);
   A.$$ = (s, root = document) => [...root.querySelectorAll(s)];
   A.escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // First user-perceived character (grapheme), so ZWJ emoji and flags stay intact in avatars.
+  A.initial = value => { const text=String(value??'').trim(); if(!text)return '?'; try{ return [...new Intl.Segmenter('ja',{granularity:'grapheme'}).segment(text)][0].segment; }catch{ return Array.from(text)[0]; } };
+  // Shared search normalization: width-insensitive (NFKC), case-insensitive, trimmed.
+  A.fold = value => String(value??'').normalize('NFKC').toLowerCase();
+  A.matches = (query, ...fields) => A.fold(fields.filter(v=>v!==undefined&&v!==null).join(' ')).includes(A.fold(query).trim());
   A.id = () => globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2);
   A.load = (key, fallback) => { try { const value = localStorage.getItem('aura.' + key); return value === null ? fallback : JSON.parse(value); } catch { return fallback; } };
+  // Stored records may be imported, legacy or damaged. Normalize known keys at the
+  // single read boundary so one bad entry never breaks an app, search or the home screen.
+  {
+    const rawLoad=A.load;
+    const obj=x=>x&&typeof x==='object'&&!Array.isArray(x);
+    const str=v=>typeof v==='string'?v:v===undefined||v===null?'':String(v);
+    const num=(v,fallback=0)=>Number.isFinite(Number(v))&&v!==null&&v!==''?Number(v):fallback;
+    const ymd=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v+'T12:00:00'));
+    const hm=v=>typeof v==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+    const withId=x=>obj(x)&&(typeof x.id==='string'||typeof x.id==='number')&&String(x.id)!=='';
+    const list=(fn,keep=withId)=>value=>Array.isArray(value)?value.filter(keep).map(x=>fn({...x,...(x.id!==undefined?{id:String(x.id)}:{})})).filter(Boolean):null;
+    const opt=(x,fields)=>{const out={...x};for(const [k,fn] of Object.entries(fields))if(Object.hasOwn(out,k))out[k]=fn(out[k]);return out;};
+    const bool=v=>!!v,steps=v=>Array.isArray(v)?v.filter(obj).map(s=>({...s,id:str(s.id)||Math.random().toString(36).slice(2),text:str(s.text),done:!!s.done})):[];
+    const schemas={
+      notes:list(x=>opt({...x,title:str(x.title),body:str(x.body),updated:num(x.updated,0)},{pinned:bool,folder:str,tags:str})),
+      noteTrash:list(x=>opt({...x,title:str(x.title),body:str(x.body)},{updated:v=>num(v,0),deletedAt:v=>num(v,0)})),
+      reminders:list(x=>opt({...x,text:str(x.text),done:!!x.done},{due:v=>ymd(v)?v:'',list:str,note:str,steps})),
+      events:list(x=>ymd(x.date)?opt({...x,title:str(x.title)||'予定',time:hm(x.time)?x.time:'00:00'},{endTime:v=>hm(v)?v:'',place:str}):null),
+      contacts:list(x=>opt({...x,name:str(x.name).trim()||'名前なし'},{phone:str,email:str,note:str,group:str,favorite:bool})),
+      journal:list(x=>{const title=str(x.title),body=str(x.body);if(!ymd(x.date)&&!title&&!body)return null;return opt({...x,date:ymd(x.date)?x.date:'0001-01-01',title,body,mood:['1','2','3','4','5'].includes(String(x.mood))?String(x.mood):'3'},{tags:str,favorite:bool});}),
+      reading:list(x=>{const total=Math.max(1,Math.floor(num(x.total,1)));return opt({...x,title:str(x.title)||'無題の本',author:str(x.author),total,page:Math.max(0,Math.min(total,Math.floor(num(x.page,0))))},{note:str});}),
+      readingSessions:list(x=>ymd(x.date)?{...x,bookId:str(x.bookId),from:num(x.from,0),to:num(x.to,0),minutes:Math.max(0,num(x.minutes,0))}:null),
+      readingQuotes:list(x=>({...x,bookId:str(x.bookId),text:str(x.text)})),
+      shopping:list(x=>({...x,name:str(x.name)||'品名なし',quantity:Math.max(1,Math.min(999,Math.floor(num(x.quantity,1)))),price:Math.max(0,num(x.price,0)),done:!!x.done})),
+      shoppingLists:list(x=>({...x,name:str(x.name)||'リスト'})),
+      shoppingTemplates:list(x=>({...x,name:str(x.name)||'定番',items:Array.isArray(x.items)?x.items.filter(obj).map(i=>({...i,name:str(i.name)||'品名なし',quantity:Math.max(1,Math.min(999,Math.floor(num(i.quantity,1)))),price:Math.max(0,num(i.price,0))})):[]})),
+      habits:list(x=>({...x,name:str(x.name)||'習慣',days:Array.isArray(x.days)?x.days.filter(ymd):[]})),
+      habitArchive:list(x=>({...x,name:str(x.name)||'習慣',days:Array.isArray(x.days)?x.days.filter(ymd):[]})),
+      expenses:list(x=>ymd(x.date)&&Number.isFinite(Number(x.amount))?opt({...x,kind:x.kind==='income'?'income':'expense',amount:Math.abs(Number(x.amount))},{note:str,category:v=>str(v)||'other'}):null),
+      recurringExpenses:list(x=>({...x,note:str(x.note),amount:Math.abs(num(x.amount,0)),day:Math.max(1,Math.min(31,Math.floor(num(x.day,1))))})),
+      files:list(x=>opt({...x,name:str(x.name)||'無題.txt',content:str(x.content),date:num(x.date,0)},{folder:str})),
+      fileVersions:list(x=>({...x,fileId:str(x.fileId),name:str(x.name),content:str(x.content),date:num(x.date,0)})),
+      sketches:list(x=>x,obj),
+      focusHistory:list(x=>ymd(x.date)?opt({...x,minutes:Math.max(0,num(x.minutes,0))},{label:str}):null,obj),
+      dailyIntentions:list(x=>ymd(x.date)?{...x,text:str(x.text)}:null,obj),
+      calcHistory:list(x=>({...x,expression:str(x.expression),result:str(x.result)}),obj),
+      callLog:list(x=>({...x,number:str(x.number),name:str(x.name)||str(x.number),duration:Math.max(0,num(x.duration,0)),date:num(x.date,0)}),obj),
+      mails:list(x=>opt({...x,sender:str(x.sender),subject:str(x.subject),body:str(x.body),folder:['inbox','sent','draft'].includes(x.folder)?x.folder:'inbox',read:!!x.read},{preview:str,time:str,to:str})),
+      conversionHistory:list(x=>typeof x.category==='string'?{...x,value:str(x.value)}:null),
+      conversionPresets:list(x=>typeof x.category==='string'?{...x,value:str(x.value)}:null),
+      shoppingBudgets:list(x=>({...x,amount:Math.max(0,num(x.amount,0))})),
+      noteFolders:value=>Array.isArray(value)?value.filter(x=>typeof x==='string'&&x.trim()):null,
+      fileFolders:value=>Array.isArray(value)?value.filter(x=>typeof x==='string'&&x.trim()):null,
+      expenseBudgets:value=>obj(value)?Object.fromEntries(Object.entries(value).filter(([,v])=>obj(v)).map(([k,v])=>[k,{total:Math.max(0,num(v.total,0)),categories:obj(v.categories)?v.categories:{}}])):null,
+      settings:value=>obj(value)?value:null,
+      ...Object.fromEntries(['blocksBest','breakerBest','minesWins','reversiWins','sudokuWins','memoryBest','snakeBest','2048best'].map(k=>[k,value=>Number.isSafeInteger(value)&&value>=0?value:null])),
+      weatherFavorites:value=>Array.isArray(value)?value.filter(p=>obj(p)&&typeof p.name==='string'&&Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)):null,
+      mapSavedPlaces:list(p=>Number.isFinite(Number(p.lat))&&Number.isFinite(Number(p.lon))?{...p,lat:Number(p.lat),lon:Number(p.lon),name:str(p.name)||'保存した場所',display_name:str(p.display_name)||str(p.name)||'保存した場所',category:str(p.category),note:str(p.note)}:null),
+      arcadeRecent:value=>Array.isArray(value)?value.filter(x=>typeof x==='string'):null,
+      arcadeFavorites:value=>Array.isArray(value)?value.filter(x=>typeof x==='string'):null,
+      photoFavorites:value=>Array.isArray(value)?value.filter(x=>typeof x==='string'):null,
+      musicLikes:value=>Array.isArray(value)?value.filter(x=>typeof x==='string'):null,
+      homeOrder:value=>Array.isArray(value)?value.filter(x=>typeof x==='string'):null,
+      readingGoal:value=>Number.isInteger(value)&&value>=1&&value<=1000?value:null,
+      expenseBudget:value=>Number.isFinite(value)&&value>=0?value:null,
+      profileName:value=>typeof value==='string'&&value.trim()?value:null,
+      focusPreferences:value=>obj(value)?Object.fromEntries(Object.entries(value).filter(([k,v])=>['work','rest','goal'].includes(k)&&Number.isInteger(v)&&v>=1&&v<=1440)):null,
+      chats:value=>obj(value)?Object.fromEntries(Object.entries(value).filter(([,v])=>Array.isArray(v)).map(([k,v])=>[k,v.filter(obj).map(m=>({...m,text:str(m.text),sent:!!m.sent}))])):null,
+      chatUnread:value=>obj(value)?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,Math.max(0,Math.floor(num(v,0)))])):null
+    };
+    A.load=(key,fallback)=>{
+      const value=rawLoad(key,fallback);
+      if(!Object.hasOwn(schemas,key)||value===fallback)return value;
+      try{const normalized=schemas[key](value);return normalized===null?fallback:normalized;}catch{return fallback;}
+    };
+  }
   A.save = (key, value) => { try { localStorage.setItem('aura.' + key, JSON.stringify(value)); return true; } catch { A.toast('容量不足。不要な写真を削除'); return false; } };
   // Related writes use snapshots so a failed write does not report success.
   // localStorage has no transactions: rollback is best effort if storage itself
@@ -35,7 +106,12 @@
       return false;
     }
   };
-  A.settings = A.load('settings', {wallpaper:'default', dark:false, wifi:true, bluetooth:true, cellular:true, airplane:false, focus:false, sound:true, brightness:100, volume:60});
+  A.settings = {wallpaper:'default', dark:false, wifi:true, bluetooth:true, cellular:true, airplane:false, focus:false, sound:true, brightness:100, volume:60, ...A.load('settings', {})};
+  for(const key of ['brightness','volume'])if(!Number.isFinite(Number(A.settings[key])))A.settings[key]=key==='brightness'?100:60;
+  if(!['default','ocean','forest','mono','aurora','sunrise'].includes(A.settings.wallpaper))A.settings.wallpaper='default';
+  if(A.settings.iconStyle!==undefined&&!['standard','glass','tinted'].includes(A.settings.iconStyle))A.settings.iconStyle='standard';
+  if(A.settings.clockStyle!==undefined&&!['classic','light','rounded'].includes(A.settings.clockStyle))A.settings.clockStyle='classic';
+  A.settings.brightness=Math.max(10,Math.min(100,Number(A.settings.brightness)));A.settings.volume=Math.max(0,Math.min(100,Number(A.settings.volume)));
   A.actions = {}; A.apps = {}; A.cleanups = []; A.current = null; A.locked = false;
   A.icons = {
     pin:'<path d="m8 3 8 0-1 6 4 4v2h-6v7l-2-2v-5H5v-2l4-4Z"/>',
@@ -872,7 +948,8 @@
   A.updateWidgets=()=>{
     const now=new Date(),date=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     const events=(A.todayEvents?.(date)||[]).slice().sort((a,b)=>a.time.localeCompare(b.time));
-    const time=now.toTimeString().slice(0,5),event=events.find(e=>e.time>=time);
+    // An event in progress (before its end time, or within an hour when no end is set) is still "now".
+    const time=now.toTimeString().slice(0,5),minutes=t=>Number(t.slice(0,2))*60+Number(t.slice(3,5)),current=minutes(time),event=events.find(e=>{const start=minutes(e.time),end=e.endTime?(e.endTime<=e.time?1440:minutes(e.endTime)):start+60;return end>current;});
     const set=(selector,text)=>{const el=A.$(selector);if(el&&el.textContent!==String(text))el.textContent=text;};
     set('.widget-event>span',event?.title||(events.length?'今日の予定は終了':'今日は自由な一日'));
     set('.widget-event>small',event?`${event.time} · ${event.place||'予定'}`:'タップして予定を追加');
@@ -934,8 +1011,8 @@
   const swapIcons=(first,second)=>{
     const x=homeOrder.indexOf(first),y=homeOrder.indexOf(second);
     if(x<0||y<0)return;
-    [homeOrder[x],homeOrder[y]]=[homeOrder[y],homeOrder[x]];
-    A.save('homeOrder',homeOrder);selectedIcon=null;A.renderHome();A.haptic();
+    const next=[...homeOrder];[next[x],next[y]]=[next[y],next[x]];
+    selectedIcon=null;if(A.save('homeOrder',next)){homeOrder=next;A.haptic();}A.renderHome();
   };
   let suppressLauncher=false;
   // The release of a long press can be retargeted to the newly opened menu.
@@ -969,7 +1046,7 @@
   A.library=()=>{
     const groups=[['よく使う',A.recentApps.length?A.recentApps.slice(0,4):['today','focus','habits','journal']],['つながる',['phone','messages','mail','safari','contacts']],['毎日のこと',['calendar','notes','reminders','files','today']],['クリエイティブ',['photos','camera','music','recorder','sketch']],['暮らしと発見',['weather','maps','health','wallet','expenses','shopping']],['自分の時間',['focus','habits','journal','reading']],['ユーティリティ',['clock','calculator','settings','games','converter']]];
     A.overlay(`${A.overlayTitle('アプリライブラリ')}<label class="spotlight-input">${A.icon('search')}<input id="library-query" aria-label="ライブラリを検索" placeholder="アプリを検索" autocomplete="off"></label><div class="library-groups" id="library-groups">${groups.map(([name,ids])=>`<section class="library-category"><div>${ids.map(id=>A.launcher(A.apps[id])).join('')}</div><h3>${name}</h3></section>`).join('')}</div><div class="spotlight-results" id="library-results" hidden></div><p class="control-footer"></p>`,'library-overlay');
-    A.$('#library-query').oninput=e=>{const q=e.target.value.trim().toLowerCase();A.$('#library-groups').hidden=!!q;const results=A.$('#library-results');results.hidden=!q;results.innerHTML=Object.values(A.apps).filter(app=>(app.name+app.id).toLowerCase().includes(q)).map(app=>A.launcher(app)).join('')||'<p class="search-empty">アプリが見つかりません。</p>';};
+    A.$('#library-query').oninput=e=>{const q=A.fold(e.target.value).trim();A.$('#library-groups').hidden=!!q;const results=A.$('#library-results');results.hidden=!q;results.innerHTML=Object.values(A.apps).filter(app=>A.matches(q,app.name,app.id)).map(app=>A.launcher(app)).join('')||'<p class="search-empty">アプリが見つかりません。</p>';};
   };
   A.actions.library=A.library;
   const wallpapers=[['default','Dusk'],['ocean','Ocean'],['forest','Forest'],['mono','Stone'],['aurora','Aurora'],['sunrise','Sunrise']];
@@ -992,9 +1069,9 @@
   A.actions.toggleLockPreview=()=>{A.settings.lockPreview=A.settings.lockPreview===false;A.applySettings();A.renderLockNotices();A.actions.personalize();};
   A.actions.previewLock=()=>A.lock();
   A.actions.gestureGuide=()=>A.overlay(`${A.overlayTitle('操作ガイド')}<div class="gesture-guide">${[['grid','ホームを左へスワイプ','全アプリを表示'],['search','ホームを下へスワイプ','アプリ・記録を検索'],['edit','アイコンを長押し','新規作成 / 配置の入替'],['signal','画面右上をタップ・下へスワイプ','明るさ・集中モード'],['messages','画面左上の時刻をタップ','通知・未読・再通知'],['arrow','下端のホームバー','タップ：ホーム / 上：切替']].map(([icon,title,body])=>`<article>${A.icon(icon)}<div><strong>${title}</strong><p>${body}</p></div></article>`).join('')}</div><p class="control-footer">PC：Escで閉じる / Hでホーム / Alt+Tabでアプリ切替</p>`,'guide-overlay');
-  A.actions.chooseWallpaper=el=>{A.settings.wallpaper=el.dataset.value;A.applySettings();A.actions.personalize();};
-  A.actions.chooseIconStyle=el=>{A.settings.iconStyle=el.dataset.value;A.applySettings();A.actions.personalize();};
-  A.actions.resetLayout=()=>A.confirm('ホームの配置をリセット','配置のみ初期化。データは保持',()=>{homeOrder=[...defaultOrder];A.save('homeOrder',homeOrder);A.actions.finishEditing();A.toast('配置をリセット');});
+  A.actions.chooseWallpaper=el=>{if(!wallpapers.some(([id])=>id===el.dataset.value))return;A.settings.wallpaper=el.dataset.value;A.applySettings();A.actions.personalize();};
+  A.actions.chooseIconStyle=el=>{if(!['standard','glass','tinted'].includes(el.dataset.value))return;A.settings.iconStyle=el.dataset.value;A.applySettings();A.actions.personalize();};
+  A.actions.resetLayout=()=>A.confirm('ホームの配置をリセット','配置のみ初期化。データは保持',()=>{if(!A.save('homeOrder',defaultOrder))return;homeOrder=[...defaultOrder];A.actions.finishEditing();A.toast('配置をリセット');});
   const baseApply=A.applySettings;
   A.applySettings=()=>{
     if(!depths.some(([id])=>id===A.settings.depth))A.settings.depth='balanced';
@@ -1010,12 +1087,12 @@
   A.spotlight=()=>{
     A.overlay(`${A.overlayTitle('検索')}<label class="spotlight-input">${A.icon('search')}<input id="spotlight-query" placeholder="アプリ・記録を検索" aria-label="アプリと記録を検索" autocomplete="off"></label><p class="spotlight-label" id="spotlight-heading">アプリ</p><div class="spotlight-results" id="spotlight-results"></div><div id="spotlight-content"></div><p class="control-footer">端末内を検索</p>`,'spotlight-overlay');
     const render=value=>{
-      const q=value.trim().toLowerCase();
-      const apps=Object.values(A.apps).filter(app=>(app.name+app.id).toLowerCase().includes(q));
+      const q=value.normalize('NFKC').trim().toLowerCase(),norm=v=>String(v??'').normalize('NFKC').toLowerCase();
+      const apps=Object.values(A.apps).filter(app=>norm(app.name+app.id).includes(q));
       A.$('#spotlight-results').innerHTML=apps.map(app=>A.launcher(app)).join('');
       // Stored records may be imported or legacy: never assume optional text fields exist.
-      const notes=q?(A.searchableNotes?.()||A.load('notes',[])).filter(n=>n&&(String(n.title||'')+'\n'+String(n.body||'')).toLowerCase().includes(q)).map(n=>({...n,title:String(n.title||''),body:String(n.body||'')})).slice(0,5):[];
-      const reminders=q?(A.searchableReminders?.()||A.load('reminders',[])).filter(r=>r&&String(r.text||'').toLowerCase().includes(q)).slice(0,5):[];
+      const notes=q?(A.searchableNotes?.()||A.load('notes',[])).filter(n=>n&&norm(String(n.title||'')+'\n'+String(n.body||'')).includes(q)).map(n=>({...n,title:String(n.title||''),body:String(n.body||'')})).slice(0,5):[];
+      const reminders=q?(A.searchableReminders?.()||A.load('reminders',[])).filter(r=>r&&norm(r.text||'').includes(q)).slice(0,5):[];
       const extra=q?(A.searchAdditional?.(q)||''):'';
       A.$('#spotlight-content').innerHTML=(notes.length?`<p class="spotlight-label">メモ</p><div class="search-content-group">${notes.map(n=>`<button data-action="searchNote" data-id="${A.escape(n.id)}">${smallIcon('notes')}<span><strong>${A.escape(n.title||'新しいメモ')}</strong><small>${A.escape(n.body.slice(0,65))}</small></span>${A.icon('arrow')}</button>`).join('')}</div>`:'')+(reminders.length?`<p class="spotlight-label">リマインダー</p><div class="search-content-group">${reminders.map(r=>`<button data-app="reminders">${smallIcon('reminders')}<span><strong>${A.escape(r.text)}</strong><small>${r.done?'完了済み':'未完了'}</small></span></button>`).join('')}</div>`:'')+extra+(!apps.length&&!notes.length&&!reminders.length&&!extra?'<div class="search-empty">該当なし</div>':'');
     };
